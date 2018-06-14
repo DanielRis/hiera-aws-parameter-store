@@ -57,12 +57,6 @@ class Hiera
         next_token = nil
         loop do
           resp = client.describe_parameters({
-            filters: [
-              {
-                key: "Name",
-                values: [ prefix ],
-              },
-            ],
             max_results: max_results,
             next_token: next_token
             })
@@ -72,7 +66,7 @@ class Hiera
               name: parameter.name,
               with_decryption: true,
             })
-            Aws_parameter_store_backend.add_parameter_to_hash(parameter.name[prefix.length..-1], presp.parameter.value, parameters)
+            Aws_parameter_store_backend.add_parameter_to_hash(parameter.name, presp.parameter.value, parameters)
           end
           next_token = resp.next_token
           break unless next_token
