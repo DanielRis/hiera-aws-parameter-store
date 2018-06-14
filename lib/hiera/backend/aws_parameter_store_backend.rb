@@ -49,10 +49,9 @@ class Hiera
         Hiera.debug("Creating AWS client")
         client = Aws::SSM::Client.new()
 
-        prefix = Config[:aws_parameter_store][:prefix]
         max_results = Config[:aws_parameter_store][:max_results] || 50
 
-        Hiera.debug("Obtaining parameters from AWS Parameter Store with prefix #{prefix}")
+        Hiera.debug("Obtaining parameters from AWS Parameter Store")
         parameters = {}
         next_token = nil
         loop do
