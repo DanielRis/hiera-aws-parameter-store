@@ -46,10 +46,13 @@ class Hiera
       private
 
       def read_parameters_from_aws_parameter_store()
-        Hiera.debug("Creating AWS client")
-        client = Aws::SSM::Client.new()
-
         max_results = Config[:aws_parameter_store][:max_results] || 50
+        access_key = Config[:aws_parameter_store][:access_key] || ''
+        secret_key = Config[:aws_parameter_store][:secret_key] || ''
+        region = Config[:aws_parameter_store][:region] || 'us-east-1'
+
+        Hiera.debug("Creating AWS client")
+        client = Aws::SSM::Client.new(region: region, credentials: Aws::Credentials.new(access_key, secret_key))
 
         Hiera.debug("Obtaining parameters from AWS Parameter Store")
         parameters = {}
