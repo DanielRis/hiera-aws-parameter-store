@@ -5,15 +5,23 @@ class Hiera
         require 'aws-sdk'
         Hiera.debug("AWS Parameter Store backend starting")
 
-        @cache = read_parameters_from_aws_parameter_store()
-        Hiera.debug("Cache=#{@cache}")
+        max_results = Config[:aws_parameter_store][:max_results] || 50
+        access_key = Config[:aws_parameter_store][:access_key] || ''
+        secret_key = Config[:aws_parameter_store][:secret_key] || ''
+        region = Config[:aws_parameter_store][:region] || 'us-east-1'
+
+        Hiera.debug("Creating AWS client")
+        @ssm_client = Aws::SSM::Client.new(region: region, credentials: Aws::Credentials.new(access_key, secret_key))
+
+        @key_cache = read_parameter_keys_from_aws_parameter_store(max_results)
+        Hiera.debug("Key Cache=#{@key_cache}")
       end
 
       def lookup(key, scope, order_override, resolution_type)
         answer = nil
 
         Hiera.debug("Looking up #{key} in AWS Parameter Store backend")
-        if @cache.include?(key)
+        if @key_cache.include?(key)
           # Extra logging that we found the key. This can be outputted
           # multiple times if the resolution type is array or hash but that
           # should be expected as the logging will then tell the user ALL the
@@ -25,7 +33,7 @@ class Hiera
           # the array
           #
           # for priority searches we break after the first found data item
-          new_answer = Backend.parse_answer(@cache[key], scope)
+          new_answer = Backend.parse_answer(read_parameter_value_from_aws_parameter_store(key), scope)
           case resolution_type
           when :array
             raise Exception, "Hiera type mismatch: expected Array and got #{new_answer.class}" unless new_answer.kind_of? Array or new_answer.kind_of? String
@@ -45,52 +53,32 @@ class Hiera
 
       private
 
-      def read_parameters_from_aws_parameter_store()
-        max_results = Config[:aws_parameter_store][:max_results] || 50
-        access_key = Config[:aws_parameter_store][:access_key] || ''
-        secret_key = Config[:aws_parameter_store][:secret_key] || ''
-        region = Config[:aws_parameter_store][:region] || 'us-east-1'
+      def read_parameter_value_from_aws_parameter_store(key)
+        Hiera.debug("Looking up value for parameter #{key}'s in AWS Parameter Store backend")
+        presp = @ssm_client.get_parameter({
+          name: key,
+          with_decryption: true,
+        })
+        #return nil unless presp.parameter.value?
+        return presp.parameter.value
+      end
 
-        Hiera.debug("Creating AWS client")
-        client = Aws::SSM::Client.new(region: region, credentials: Aws::Credentials.new(access_key, secret_key))
-
-        Hiera.debug("Obtaining parameters from AWS Parameter Store")
-        parameters = {}
+      def read_parameter_keys_from_aws_parameter_store(max_results)
+        Hiera.debug("Obtaining parameter keys from AWS Parameter Store")
+        parameter_keys = []
         next_token = nil
         loop do
-          resp = client.describe_parameters({
+          resp = @ssm_client.describe_parameters({
             max_results: max_results,
             next_token: next_token
             })
           resp.parameters.each do |parameter|
-            Hiera.debug("Found paramenter: #{parameter}")
-            presp = client.get_parameter({
-              name: parameter.name,
-              with_decryption: true,
-            })
-            Aws_parameter_store_backend.add_parameter_to_hash(parameter.name, presp.parameter.value, parameters)
+            parameter_keys.push(parameter.name)
           end
           next_token = resp.next_token
           break unless next_token
         end
-        parameters
-      end
-
-      def self.add_parameter_to_hash(name, value, hash)
-        def self.add_parameter_to_hash_helper(name_list, value, current_hash)
-          raise "Can not add value if name is empty or invalid" if name_list.empty?
-          head = name_list.shift
-          if name_list.empty?
-            raise "Element already exists" if current_hash.has_key?(head)
-            current_hash[head]=value
-            return
-          end
-          current_hash[head] = {} unless current_hash.has_key?(head)
-          new_hash = current_hash[head]
-          raise "Parent element already exists" unless new_hash.is_a?(Hash)
-          add_parameter_to_hash_helper(name_list, value, current_hash[head])
-        end
-        add_parameter_to_hash_helper(name.split('.'), value, hash)
+        return parameter_keys
       end
     end
   end
