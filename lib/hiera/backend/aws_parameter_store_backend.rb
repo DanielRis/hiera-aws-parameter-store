@@ -59,8 +59,13 @@ class Hiera
           name: key,
           with_decryption: true,
         })
-        #return nil unless presp.parameter.value?
-        return presp.parameter.value
+        if presp.parameter.type == "StringList"
+          raw_string_list = presp.parameter.value
+          return_value = raw_string_list.split(",")
+        else
+          return_value = presp.parameter.value
+        end
+        return return_value
       end
 
       def read_parameter_keys_from_aws_parameter_store(max_results)
